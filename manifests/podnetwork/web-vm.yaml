@@ -96,7 +96,7 @@ spec:
                     Group=petclinic
                     WorkingDirectory=/opt/spring-petclinic
                     Environment="SPRING_PROFILES_ACTIVE=mysql"
-                    Environment="MYSQL_URL=jdbc:mysql://10.132.2.105:3306/petclinic" # CHANGE IP TO MYSQL
+                    Environment="MYSQL_URL=jdbc:mysql://mysql:3306/petclinic"
                     ExecStart=/usr/bin/java -jar /opt/spring-petclinic/target/petclinic.jar
                     SuccessExitStatus=143
                     Restart=on-failure

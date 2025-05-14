@@ -1,11 +1,10 @@
 # spring-petclinic-virt
 
-1. Create new namespace (e.g: sample)
-2. Deploy mysql-vm.yaml first and take note of VMs IP.
-3. Change the following line of web-vm.yaml:
+1. Change the following line of web-vm.yaml if needed (not needed if you are using pod network):
 
 ```
-Environment="MYSQL_URL=jdbc:mysql://10.135.0.63:3306/petclinic" # CHANGE IP TO MYSQL
+Environment="MYSQL_URL=jdbc:mysql://mysql:3306/petclinic"
 ```
 
-4. Deploy web-*.yaml
+2. Deploy yaml manifests.
+
