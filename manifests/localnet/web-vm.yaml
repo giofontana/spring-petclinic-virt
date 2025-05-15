@@ -1,0 +1,124 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    app: fedora-web
+    kubevirt.io/dynamic-credentials-support: 'true'
+    vm.kubevirt.io/template: fedora-server-small
+    vm.kubevirt.io/template.namespace: openshift
+  name: fedora-web
+spec:
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        creationTimestamp: null
+        name: fedora-web
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: fedora
+          namespace: openshift-virtualization-os-images
+        storage:
+          resources:
+            requests:
+              storage: 30Gi
+  runStrategy: RerunOnFailure
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/flavor: small
+        vm.kubevirt.io/os: fedora
+        vm.kubevirt.io/workload: server
+      creationTimestamp: null
+      labels:
+        kubevirt.io/domain: fedora-web
+        kubevirt.io/size: small
+        app: petclinic
+    spec:
+      architecture: amd64
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 2
+        devices:
+          disks:
+            - disk:
+                bus: virtio
+              name: rootdisk
+            - disk:
+                bus: virtio
+              name: cloudinitdisk
+          interfaces:
+            - bridge: {}
+              model: virtio
+              name: nic-1
+          rng: {}
+        features:
+          acpi: {}
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        machine:
+          type: pc-q35-rhel9.4.0
+        memory:
+          guest: 8Gi
+        resources: {}
+      networks:
+        - name: nic-1
+          multus:
+            networkName: default/flatnetwork
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - dataVolume:
+            name: fedora-web
+          name: rootdisk
+        - cloudInitNoCloud:
+            userData: |-
+              #cloud-config
+              user: fedora
+              password: r3dh4t1!
+              chpasswd: { expire: False }
+              #cloud-config
+              write_files:
+                - path: /etc/systemd/system/petclinic.service
+                  owner: root:root
+                  permissions: '0644'
+                  content: |
+                    [Unit]
+                    Description=Spring Petclinic Application
+                    After=network.target
+              
+                    [Service]
+                    User=petclinic
+                    Group=petclinic
+                    WorkingDirectory=/opt/spring-petclinic
+                    Environment="SPRING_PROFILES_ACTIVE=mysql"
+                    Environment="MYSQL_URL=jdbc:mysql://mysql:3306/petclinic"
+                    ExecStart=/usr/bin/java -jar /opt/spring-petclinic/target/petclinic.jar
+                    SuccessExitStatus=143
+                    Restart=on-failure
+                    RestartSec=10
+              
+                    [Install]
+                    WantedBy=multi-user.target
+              
+              # Build the application
+              runcmd:
+                - |
+                  dnf install git java-21-openjdk maven -y
+                  useradd -r -m -d /opt/spring-petclinic -s /sbin/nologin petclinic
+                  git clone https://github.com/redhat-developer-demos/spring-petclinic.git /opt/spring-petclinic/source
+                  chown -R petclinic:petclinic /opt/spring-petclinic
+                  cd /opt/spring-petclinic/source
+                  mvn package -DskipTests
+                  mkdir /opt/spring-petclinic/target
+                  mv target/*.jar /opt/spring-petclinic/target/petclinic.jar
+                  chown -R petclinic:petclinic /opt/spring-petclinic
+                  systemctl daemon-reload
+                  systemctl enable petclinic.service --now
+
+          name: cloudinitdisk

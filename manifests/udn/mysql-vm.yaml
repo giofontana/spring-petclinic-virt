@@ -1,0 +1,142 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    app: fedora-mysql
+    kubevirt.io/dynamic-credentials-support: 'true'
+    vm.kubevirt.io/template: fedora-server-small
+    vm.kubevirt.io/template.namespace: openshift
+  name: fedora-mysql
+spec:
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        creationTimestamp: null
+        name: fedora-mysql
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: fedora
+          namespace: openshift-virtualization-os-images
+        storage:
+          resources:
+            requests:
+              storage: 30Gi
+  runStrategy: RerunOnFailure
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/flavor: small
+        vm.kubevirt.io/os: fedora
+        vm.kubevirt.io/workload: server
+      creationTimestamp: null
+      labels:
+        kubevirt.io/domain: fedora-mysql
+        kubevirt.io/size: small
+        app: mysql
+    spec:
+      architecture: amd64
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 2
+        devices:
+          disks:
+            - disk:
+                bus: virtio
+              name: rootdisk
+            - disk:
+                bus: virtio
+              name: cloudinitdisk
+          interfaces:
+            - bridge: {}
+              model: virtio
+              name: nic-1
+          rng: {}
+        features:
+          acpi: {}
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        machine:
+          type: pc-q35-rhel9.4.0
+        memory:
+          guest: 8Gi
+        resources: {}
+      networks:
+        - name: nic-1
+          multus:
+            networkName: primary-udn
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - dataVolume:
+            name: fedora-mysql
+          name: rootdisk
+        - cloudInitNoCloud:
+            userData: |-
+              #cloud-config
+              user: fedora
+              # Note: Storing plain text passwords in cloud-init is generally discouraged for production.
+              # Consider using SSH keys for access and fetching secrets from a secure vault if needed.
+              password: r3dh4t1!
+              chpasswd: { expire: False }
+
+              packages:
+                - mysql-server
+              
+              runcmd:
+                # Start and enable MySQL service
+                - [ systemctl, start, mysqld ]
+                - [ systemctl, enable, mysqld ]
+              
+                # Secure MySQL installation and set root password
+                - |
+                  echo -e "[mysqld]\nbind-address = 0.0.0.0" >> /etc/my.cnf
+                  systemctl restart mysqld
+              
+                - |
+                  mkdir -p /var/run/mysqld
+                  chown mysql:mysql /var/run/mysqld
+                  /usr/sbin/mysqld --user=mysql --skip-grant-tables --skip-networking > /tmp/mysqld_skip_grant.log 2>&1 &
+                  MYSQLD_SAFE_PID=$!
+                  elapsed_time=0
+                  timeout_duration=30
+                  MYSQL_SOCKET_PATH="/var/lib/mysql/mysql.sock"
+                  until mysqladmin ping --silent --socket="$MYSQL_SOCKET_PATH" || [ $elapsed_time -ge $timeout_duration ]; do
+                    sleep 2
+                    elapsed_time=$((elapsed_time+2))
+                  done
+                  if ! mysqladmin ping --silent --socket="$MYSQL_SOCKET_PATH"; then
+                    echo "ERROR: mysqld with --skip-grant-tables did not become responsive."
+                    kill $MYSQLD_SAFE_PID || true
+                    exit 2
+                  fi
+
+                - |
+                  echo "Executing SQL commands (with FLUSH PRIVILEGES first)..."
+                  mysql -u root --socket="$MYSQL_SOCKET_PATH" <<EOF_MYSQL_CMDS
+                  FLUSH PRIVILEGES;
+                  ALTER USER 'root'@'localhost' IDENTIFIED BY 'petclinic';
+                  DELETE FROM mysql.user WHERE User='';
+                  DROP DATABASE IF EXISTS test;
+
+                  CREATE DATABASE petclinic;
+                  CREATE USER 'petclinic'@'%' IDENTIFIED BY 'petclinic';
+                  GRANT ALL PRIVILEGES ON petclinic.* TO 'petclinic'@'%';
+                  FLUSH PRIVILEGES;
+                  EOF_MYSQL_CMDS
+
+                - |
+                  kill $MYSQLD_SAFE_PID
+                  wait $MYSQLD_SAFE_PID || true
+                  sleep 2
+
+                - [ systemctl, daemon-reload ]
+                - [ systemctl, start, mysqld ]
+                - [ systemctl, enable, mysqld ]
+
+          name: cloudinitdisk

@@ -1,0 +1,27 @@
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: ovsbr-flat
+spec:
+  desiredState:
+    interfaces:
+      - bridge:
+          allow-extra-patch-ports: true
+          options:
+            stp:
+              enabled: false
+          port:
+            - name: enp3s0
+        description: Bridge on enp3s0
+        ipv4:
+          enabled: false
+        name: ovsbr-flat
+        state: up
+        type: ovs-bridge
+    ovn:
+      bridge-mappings:
+        - bridge: ovsbr-flat
+          localnet: flatnetwork
+          state: present
+  nodeSelector:
+    node-role.kubernetes.io/worker: ''
