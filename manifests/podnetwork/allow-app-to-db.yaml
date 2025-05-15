@@ -12,6 +12,9 @@ spec:
         - podSelector:
             matchLabels:
               app: petclinic
+      ports:
+        - protocol: TCP
+          port: 3306
   policyTypes:
     - Ingress
 
